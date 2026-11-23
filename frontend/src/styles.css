@@ -76,8 +76,14 @@ th { color: var(--淡); font-weight: 500; background: var(--块亮) }
 .徽章 { display: inline-block; padding: 0.12rem 0.45rem; border-radius: 3px; font-size: 0.76rem; font-weight: 600 }
 .徽章.通 { background: var(--通底); color: var(--通) }
 .徽章.败 { background: var(--败底); color: var(--败) }
+.徽章.次 { background: var(--块亮); color: var(--淡) }
 .段 { margin-top: 1.25rem }
 .段题 { font-size: 0.88rem; margin: 0 0 0.55rem; color: var(--水); font-weight: 600 }
+.入 {
+  background: var(--块); border: 1px solid var(--线); border-radius: 5px;
+  color: var(--字); padding: 0.32rem 0.5rem; font-size: 0.85rem; font-family: inherit;
+}
+.入:focus { outline: none; border-color: var(--水) }
 @media (max-width: 900px) {
   .阶条 { grid-template-columns: repeat(2, 1fr) }
 }

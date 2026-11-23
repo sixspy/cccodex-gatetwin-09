@@ -1,11 +1,17 @@
-from app.db import 连接
+import json
+
+from app.db import 写事务
 from app.seed import 此刻
+from app.modules.配对超时策略 import 校验钉界, 站规秒
 
 
 def 跑贯验() -> dict:
-    """行程账与刷卡点互证：每笔已成对行程对应两笔已成对刷卡；旁路/开腿命运自洽。"""
-    conn = 连接()
-    try:
+    """行程账与刷卡点互证：每笔已成对行程对应两笔已成对刷卡；旁路/开腿命运自洽。
+
+    超时权威协同（乙口径）：在途开腿的钉死超时界必须结构有效；缺腿超时旁路
+    不得一腿双判；旁路载荷的钉界须与开腿账钉界一致；权威配置（站规秒/线路超时）自洽。
+    """
+    with 写事务() as conn:
         问题 = []
         刷卡数 = conn.execute("SELECT COUNT(*) FROM 刷卡点").fetchone()[0]
         行程 = conn.execute("SELECT * FROM 行程账 WHERE 状态='已成对'").fetchall()
@@ -43,6 +49,39 @@ def 跑贯验() -> dict:
         if 开腿刷 != 开腿数:
             问题.append(f"已开腿刷卡{开腿刷} ≠ 在途开腿{开腿数}")
 
+        # —— 超时权威贯验 ——
+        for leg in conn.execute("SELECT * FROM 开腿账 WHERE 状态='在途'").fetchall():
+            for p in 校验钉界(conn, leg):
+                问题.append(f"开腿{leg['开腿键']}钉界无效:{p}")
+
+        for r in conn.execute(
+            "SELECT 事件编号, COUNT(*) AS c FROM 旁路匣 WHERE 原因='缺腿超时' "
+            "GROUP BY 事件编号 HAVING c > 1"
+        ):
+            问题.append(f"事件{r['事件编号']}缺腿超时一腿双判×{r['c']}")
+
+        for r in conn.execute("SELECT 载荷 FROM 旁路匣 WHERE 原因='缺腿超时'"):
+            try:
+                载 = json.loads(r["载荷"])
+            except Exception:
+                问题.append("缺腿超时旁路载荷不可解析")
+                continue
+            leg = conn.execute(
+                "SELECT * FROM 开腿账 WHERE 开腿键=?", (载.get("开腿键"),)
+            ).fetchone()
+            if not leg:
+                问题.append(f"缺腿超时旁路指向缺失开腿{载.get('开腿键')}")
+            elif 载.get("钉死秒") != leg["超时秒"] or 载.get("超时界") != leg["超时界"]:
+                问题.append(f"开腿{leg['开腿键']}旁路钉界与开腿账钉界不符")
+
+        try:
+            站规秒(conn)
+        except ValueError as e:
+            问题.append(str(e))
+        for r in conn.execute("SELECT 线路键, 超时秒 FROM 线路超时"):
+            if int(r["超时秒"]) <= 0:
+                问题.append(f"线路{r['线路键']}超时秒非正")
+
         通过 = 1 if not 问题 else 0
         说明 = "行程账与刷卡点互证通过" if 通过 else "；".join(问题)[:800]
         conn.execute(
@@ -50,7 +89,6 @@ def 跑贯验() -> dict:
                VALUES (?,?,?,?,?,?,?)""",
             (此刻(), 刷卡数, len(行程), 开腿数, 旁路数, 通过, 说明),
         )
-        conn.commit()
         return {
             "是否通过": bool(通过),
             "刷卡数": 刷卡数,
@@ -60,5 +98,3 @@ def 跑贯验() -> dict:
             "说明": 说明,
             "问题": 问题,
         }
-    finally:
-        conn.close()
